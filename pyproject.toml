@@ -1,0 +1,36 @@
+[project]
+name = "dash-event-callback"
+version = "0.1.0"
+description = "Streaming callback for Dash"
+authors = [
+    {name = "Christian Giessel", email = "christian.giessel@gmail.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dash>=3.1.1,<4.0.0",
+    "dash-extensions>=2.0.4,<3.0.0",
+]
+
+# Entry point for automatic plugin discovery
+[project.entry-points."dash_hooks"]
+dash_event_callback = "dash_event_callback"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "dash-event-callback"
+version = "0.1.0"
+description = "Streaming callback for Dash"
+authors = ["Christian Giessel <christian.giessel@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "dash_event_callback"}]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+dash = ">=3.1.1,<4.0.0"
+dash-extensions = ">=2.0.4,<3.0.0"
