@@ -91,6 +91,7 @@ class TestComponentStream(dmc.Stack):
             message="Notifications in Dash, Awesome!",
             color="lime",
         )
+
         yield None
         progress = 0
         chunck_size = 500
@@ -101,8 +102,7 @@ class TestComponentStream(dmc.Stack):
                 columnDefs = [{"field": col} for col in colnames]
 
                 yield stream_props(
-                    TestComponentStream.ids.table,
-                    props={"columnDefs": columnDefs}
+                    TestComponentStream.ids.table, props={"columnDefs": columnDefs}
                 )
 
             yield stream_props(TestComponentStream.ids.table, update)
@@ -158,9 +158,7 @@ class TestComponentStream(dmc.Stack):
         )
 
 
-app = Dash(
-    __name__
-)
+app = Dash(__name__)
 
 app.layout = dmc.MantineProvider(
     dmc.Stack(
@@ -176,4 +174,4 @@ app.layout = dmc.MantineProvider(
 )
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, port=8123)

@@ -106,10 +106,7 @@ def event_callback(*dependencies, prevent_initital_call=True, on_error=None):
         sig = inspect.signature(func)
         param_names = list(sig.parameters.keys())
         callback_id = generate_deterministic_id(func, dependencies)
-        SSE_CALLBACK_MAP[callback_id] = {
-            "function": func,
-            "on_error": on_error
-        }
+        SSE_CALLBACK_MAP[callback_id] = {"function": func, "on_error": on_error}
 
         # Generate and register clientside callback
         clientside_function = generate_clientside_callback(param_names, callback_id)

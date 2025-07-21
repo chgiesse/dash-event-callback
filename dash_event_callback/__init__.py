@@ -1,9 +1,8 @@
-from .helper import recursive_to_plotly_json
 from .event_callback import (
     SSECallbackComponent,
     ServerSentEvent,
     event_callback,
-    stream_props
+    stream_props,
 )
 from .constants import (
     SSE_CALLBACK_ENDPOINT,
@@ -13,25 +12,15 @@ from .constants import (
     ERROR_TOKEN,
     DONE_TOKEN,
     INIT_TOKEN,
-    signal_type
+    signal_type,
 )
 
-from typing import Literal, Dict
+from typing import Dict
 from dash import hooks, Input, Output, State
-from flask import (
-    stream_with_context, 
-    make_response, 
-    request, 
-    abort
-)
-import time
+from flask import stream_with_context, make_response, request, abort
 import warnings
-
-
-try:
-    import orjson as json
-except ImportError:
-    import json
+import time
+import json
 
 
 @hooks.route(SSE_CALLBACK_ENDPOINT, methods=["POST"])
@@ -60,21 +49,25 @@ def sse_component_callback():
         if not callback_func:
             error_message = f"Could not find function for sse id {callback_id}"
             yield (
-                on_error(error_message) 
-                if on_error 
+                on_error(error_message)
+                if on_error
                 else send_signal(ERROR_TOKEN, {"error": error_message})
             )
 
         try:
             for item in callback_func(**content):
                 if item is None:
-                    warnings.warn(f"Callback generator functions should not return None values - Callback ID :{callback_id}")
+                    warnings.warn(
+                        f"Callback generator functions should not return None values - Callback ID :{callback_id}"
+                    )
                     continue
                 yield item
                 time.sleep(0.05)
             yield send_signal(DONE_TOKEN)
         except Exception as e:
-            yield on_error(e) if on_error else send_signal(ERROR_TOKEN, {"error": str(e)}) 
+            yield (
+                on_error(e) if on_error else send_signal(ERROR_TOKEN, {"error": str(e)})
+            )
 
     response = make_response(
         callback_generator(),
@@ -137,7 +130,7 @@ hooks.clientside_callback(
                 
                 if (componentId === TOKENS.ERROR) {
                     processedData[callbackId] = 0;
-                    window.alert("Error occurred while processing stream", props);
+                    window.alert("Error occurred while processing stream - message: " + props.error);
                     return;
                 }
                 
@@ -159,7 +152,8 @@ hooks.clientside_callback(
 )
 
 hooks.clientside_callback(
-    f"""function ( pathChange ) {{
+    f"""
+    function ( pathChange ) {{
         if ( !pathChange ) {{
             return window.dash_clientside.no_update
         }}
