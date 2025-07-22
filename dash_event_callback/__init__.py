@@ -16,7 +16,7 @@ from .constants import (
 )
 
 from typing import Dict
-from dash import hooks, Input, Output, State
+from dash import hooks, Input, Output, State, Dash
 from flask import stream_with_context, make_response, request, abort
 import warnings
 import time
@@ -147,17 +147,23 @@ hooks.clientside_callback(
     prevent_initial_call=True,
 )
 
-hooks.clientside_callback(
-    f"""
-    function ( pathChange ) {{
-        if ( !pathChange ) {{
-            return window.dash_clientside.no_update
-        }}
-        window.dash_clientside.set_props('{SSECallbackComponent.ids.sse}', {{done: true, url: null}});
-        window.dash_clientside.set_props('{SSECallbackComponent.ids.store}', {{data: {{}}}});
-    }}""",
-    Input("_pages_location", "pathname", allow_optional=True),
-    prevent_initial_call=True,
-)
+
+@hooks.setup()
+def handle_url_change(app: Dash):
+    if not app.use_pages:
+        return 
+
+    hooks.clientside_callback(
+        f"""
+        function ( pathChange ) {{
+            if ( !pathChange ) {{
+                return window.dash_clientside.no_update
+            }}
+            window.dash_clientside.set_props('{SSECallbackComponent.ids.sse}', {{done: true, url: null}});
+            window.dash_clientside.set_props('{SSECallbackComponent.ids.store}', {{data: {{}}}});
+        }}""",
+        Input("_pages_location", "pathname"),
+        prevent_initial_call=True,
+    )
 
 __all__ = ["event_callback", "stream_props"]
