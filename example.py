@@ -61,7 +61,9 @@ class NotificationComponent(dmc.Box):
         super().__init__(
             [
                 dmc.NotificationContainer(
-                    id=self.ids.container, transitionDuration=500
+                    id=self.ids.container, 
+                    transitionDuration=500,
+                    position="top-right"
                 ),
             ]
         )

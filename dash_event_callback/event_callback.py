@@ -14,6 +14,7 @@ from typing import Callable
 import json
 import inspect
 import hashlib
+import asyncio
 
 
 @dataclass
@@ -82,6 +83,7 @@ def generate_deterministic_id(func: Callable, dependencies: tuple) -> str:
     Generates a deterministic SHA256 hash for a callback.
     The hash is based on the function's fully qualified name and a sorted,
     string representation of its dependencies.
+    Should align more with dashs callback id generation.
     """
     func_identity = f"{func.__module__}.{func.__qualname__}"
     dependency_reprs = sorted([repr(d) for d in dependencies])
@@ -102,7 +104,12 @@ def stream_props(component_id: str, props):
 def event_callback(*dependencies, prevent_initital_call=True, on_error=None):
 
     def decorator(func: Callable) -> Callable:
-        # Get function signature to know what arguments it expects
+        if asyncio.iscoroutine(func):
+            raise ValueError("Event callback needs to be a normal function, not async")
+
+        if not inspect.isgeneratorfunction(func):
+            raise ValueError("Event callback must be a generator function")
+
         sig = inspect.signature(func)
         param_names = list(sig.parameters.keys())
         callback_id = generate_deterministic_id(func, dependencies)
@@ -115,7 +122,6 @@ def event_callback(*dependencies, prevent_initital_call=True, on_error=None):
             *dependencies,
             prevent_initial_call=prevent_initital_call,
         )
-        # Return the original function unchanged
         return func
 
     return decorator
