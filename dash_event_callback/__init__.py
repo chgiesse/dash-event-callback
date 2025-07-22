@@ -1,3 +1,4 @@
+import inspect
 from .event_callback import (
     SSECallbackComponent,
     ServerSentEvent,
@@ -16,15 +17,14 @@ from .constants import (
 )
 
 from typing import Dict
-from dash import hooks, Input, Output, State
+from dash import hooks, Input, Output, State, Dash
 from flask import stream_with_context, make_response, request, abort
 import warnings
 import time
 import json
 
 
-@hooks.route(SSE_CALLBACK_ENDPOINT, methods=["POST"])
-def sse_component_callback():
+def sync_sse_callback_endpoint():
 
     if "text/event-stream" not in request.accept_mimetypes:
         abort(400)
@@ -78,10 +78,93 @@ def sse_component_callback():
         },
     )
 
-    response.timeout = None
+    response.timeout = 30 
     return response
 
 
+async def async_sse_callback_endpoint():
+
+    if "text/event-stream" not in request.accept_mimetypes:
+        abort(400)
+
+    data = request.get_json()
+    content = data["content"].copy()
+    ctx = content.pop("callback_context", {})
+    callback_id = content.pop(SSE_CALLBACK_ID_KEY)
+    callback = SSE_CALLBACK_MAP.get(callback_id, {})
+    callback_func = callback.get("function")
+    on_error = callback.get("on_error")
+
+    def send_signal(signal: signal_type, payload: Dict = {}):
+        response = [signal, payload, callback_id]
+        event = ServerSentEvent(json.dumps(response) + STEAM_SEPERATOR)
+        return event.encode()
+
+    @stream_with_context
+    async def callback_generator():
+        yield send_signal(INIT_TOKEN)
+        
+        if not callback_func:
+            error_message = f"Could not find function for sse id {callback_id}"
+            yield (
+                on_error(error_message)
+                if on_error
+                else send_signal(ERROR_TOKEN, {"error": error_message})
+            )
+
+        try:
+            if inspect.iscoroutine(callback_func):
+                async for item in callback_func(**content):
+                    if item is None:
+                        warnings.warn(
+                            f"""
+                            Callback generator functions should not return None values
+                            Callback ID :{callback_id}
+                            """
+                        )
+                        continue
+                    yield item
+                    time.sleep(0.05)
+            else:
+                for item in callback_func(**content):
+                    if item is None:
+                        warnings.warn(
+                            f"""
+                            Callback generator functions should not return None values
+                            Callback ID :{callback_id}
+                            """
+                        )
+                        continue
+                    yield item
+                    time.sleep(0.05)
+                yield send_signal(DONE_TOKEN)
+        except Exception as e:
+            yield (
+                on_error(e) if on_error else send_signal(ERROR_TOKEN, {"error": str(e)})
+            )
+
+    response = make_response(
+        callback_generator(),
+        {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Transfer-Encoding": "chunked",
+        },
+    )
+
+    response.timeout = 30 
+    return response
+
+@hooks.setup()
+def add_endpoint(app: Dash):
+    dash_is_async = app._use_async
+    print("SETUP HOOK", dash_is_async)
+    if dash_is_async:
+        hooks.route(SSE_CALLBACK_ENDPOINT, methods=["POST"])(async_sse_callback_endpoint)
+    else:
+        hooks.route(SSE_CALLBACK_ENDPOINT, methods=["POST"])(sync_sse_callback_endpoint)
+
+    
 @hooks.layout(priority=1)
 def add_sse_component(layout):
     return (
@@ -118,26 +201,21 @@ hooks.clientside_callback(
             try {
                 const [componentId, props, callbackId] = JSON.parse(messageStr);
                 
-                if (componentId === TOKENS.INIT) {
-                    processedData[callbackId] = 1;
-                    return;
+                switch (componentId) {
+                    case TOKENS.INIT:
+                        processedData[callbackId] = 1;
+                        break;
+                    case TOKENS.DONE:
+                        processedData[callbackId] = 0;
+                        break;
+                    case TOKENS.ERROR:
+                        processedData[callbackId] = 0;
+                        window.alert("Error occurred while processing stream", props);
+                        break;
+                    default:
+                        setProps(componentId, props);
+                        processedData[callbackId]++;
                 }
-                
-                if (componentId === TOKENS.DONE) {
-                    processedData[callbackId] = 0;
-                    return;
-                }
-                
-                if (componentId === TOKENS.ERROR) {
-                    processedData[callbackId] = 0;
-                    window.alert("Error occurred while processing stream - message: " + props.error);
-                    return;
-                }
-                
-                // Regular component update
-                setProps(componentId, props);
-                processedData[callbackId]++;
-                
             } catch (e) {
                 console.error("Error processing message:", e, messageStr);
             }

@@ -75,12 +75,12 @@ class TestComponentStream(dmc.Stack):
 
     @event_callback(
         Input(ids.button, "n_clicks"),
-        # on_error=lambda e: NotificationComponent.send_notification(
-        #     title="Error occured durings stream - please reload the page",
-        #     message=str(e),
-        #     color="red.6",
-        #     autoClose=False
-        # )
+        on_error=lambda e: NotificationComponent.send_notification(
+            title="Error occured durings stream - please reload the page",
+            message=str(e),
+            color="red.6",
+            autoClose=False
+        )
     )
     def update_table(n_clicks):
 
@@ -92,7 +92,6 @@ class TestComponentStream(dmc.Stack):
             color="lime",
         )
 
-        yield None
         progress = 0
         chunck_size = 500
         for data_chunk, colnames in get_data(chunck_size):
