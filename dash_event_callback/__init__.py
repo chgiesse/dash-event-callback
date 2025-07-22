@@ -128,7 +128,7 @@ hooks.clientside_callback(
                         break;
                     case TOKENS.ERROR:
                         processedData[callbackId] = 0;
-                        window.alert("Error occurred while processing stream", props);
+                        window.alert("Error occurred while processing stream - " + props.error);
                         break;
                     default:
                         setProps(componentId, props);
