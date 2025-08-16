@@ -14,13 +14,15 @@ from .constants import (
     INIT_TOKEN,
     signal_type,
 )
+from .helper import get_callback_id
 
 from typing import Dict
-from dash import hooks, Input, Output, State, Dash
+from dash import hooks, Input, Output, State, Dash, MATCH
 from flask import stream_with_context, make_response, request, abort
 import warnings
 import time
 import json
+from asyncio import CancelledError
 
 
 @hooks.route(SSE_CALLBACK_ENDPOINT, methods=["POST"])
@@ -32,7 +34,11 @@ def sync_sse_callback_endpoint():
     data = request.get_json()
     content = data["content"].copy()
     ctx = content.pop("callback_context", {})
-    callback_id = content.pop(SSE_CALLBACK_ID_KEY)
+    callback_id = get_callback_id(content.pop(SSE_CALLBACK_ID_KEY))
+
+    if not callback_id:
+        raise ValueError("callback_id is required")
+
     callback = SSE_CALLBACK_MAP.get(callback_id, {})
     callback_func = callback.get("function")
     on_error = callback.get("on_error")
@@ -65,60 +71,60 @@ def sync_sse_callback_endpoint():
                 yield item
                 time.sleep(0.05)
             yield send_signal(DONE_TOKEN)
+
+        except CancelledError as e:
+            print("SSE DISCONNECT", str(e), flush=True)
+
         except Exception as e:
             yield (
                 on_error(e) if on_error else send_signal(ERROR_TOKEN, {"error": str(e)})
             )
 
-    response = make_response(
-        callback_generator(),
-        {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "Transfer-Encoding": "chunked",
-        },
-    )
-
-    response.timeout = 30 
+    response = make_response(callback_generator())
+    response.headers.update({
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Transfer-Encoding": "chunked",
+    })
     return response
 
-
-@hooks.layout(priority=1)
-def add_sse_component(layout):
-    return (
-        [SSECallbackComponent()] + layout
-        if isinstance(layout, list)
-        else [SSECallbackComponent(), layout]
-    )
+#
+# @hooks.layout(priority=1)
+# def add_sse_component(layout):
+#     return (
+#         [SSECallbackComponent()] + layout
+#         if isinstance(layout, list)
+#         else [SSECallbackComponent(), layout]
+#     )
 
 
 hooks.clientside_callback(
     """
     function(message, processedData) {
         if (!message) { return processedData || {} };
-        
+
         const TOKENS = {
             DONE: "[DONE]",
             INIT: "[INIT]",
             ERROR: "[ERROR]"
         };
-        
+
         const setProps = window.dash_clientside.set_props;
         const messageList = message.split('__concatsep__');
         processedData = processedData || {};
-        
+
         if (messageList[messageList.length - 1] === '') {
             messageList.pop();
         }
-        
+
         const cbId = JSON.parse(messageList[0])[2];
         const startIdx = processedData[cbId] || 0;
         const newMessages = messageList.slice(startIdx);
-        
+
         newMessages.forEach(messageStr => {
             try {
                 const [componentId, props, callbackId] = JSON.parse(messageStr);
-                
+
                 switch (componentId) {
                     case TOKENS.INIT:
                         processedData[callbackId] = 1;
@@ -135,35 +141,41 @@ hooks.clientside_callback(
                         processedData[callbackId]++;
                 }
             } catch (e) {
+                processedData[cbId] = 0;
+                setProps("component-update-stream-sse", {done: true});
                 console.error("Error processing message:", e, messageStr);
             }
         });
-        
+
         return processedData;
     }""",
-    Output(SSECallbackComponent.ids.store, "data"),
-    Input(SSECallbackComponent.ids.sse, "value"),
-    State(SSECallbackComponent.ids.store, "data"),
+    Output(SSECallbackComponent.ids.store(MATCH), "data"),
+    Input(SSECallbackComponent.ids.sse(MATCH), "value"),
+    State(SSECallbackComponent.ids.store(MATCH), "data"),
     prevent_initial_call=True,
 )
 
 
-@hooks.setup()
-def handle_url_change(app: Dash):
-    if not app.use_pages:
-        return 
-
-    hooks.clientside_callback(
-        f"""
-        function ( pathChange ) {{
-            if ( !pathChange ) {{
-                return window.dash_clientside.no_update
-            }}
-            window.dash_clientside.set_props('{SSECallbackComponent.ids.sse}', {{done: true, url: null}});
-            window.dash_clientside.set_props('{SSECallbackComponent.ids.store}', {{data: {{}}}});
-        }}""",
-        Input("_pages_location", "pathname"),
-        prevent_initial_call=True,
-    )
-
+# @hooks.setup()
+# def handle_url_change(app: Dash):
+#     # if not app.use_pages:
+#     #     return
+#     hooks.clientside_callback(
+#         f"""
+#         function ( pathChange ) {{
+#             if ( !pathChange ) {{
+#                 return window.dash_clientside.no_update
+#             }}
+#             setProps = window.dash_clientside.set_props
+#             console.log("Close sse")
+#             setProps('{SSECallbackComponent.ids.sse}', {{done: true, url: null}});
+#             setProps('{SSECallbackComponent.ids.store}', {{data: {{}}}});
+#             setProps("stream-button", {{loading: false}})
+#         }}""",
+#         # Input("_pages_location", "pathname"),
+#         Input("btn", "n_clicks"),
+#         prevent_initial_call=True,
+#     )
+#
+#
 __all__ = ["event_callback", "stream_props"]

@@ -1,3 +1,5 @@
+import json
+
 def recursive_to_plotly_json(component):
     """
     Recursively convert a component to a JSON-serializable structure.
@@ -100,3 +102,11 @@ def recursive_to_plotly_json(component):
             return None
 
     return component
+
+
+def get_callback_id(callback_id: str):
+    try:
+        callback_id_dict = json.loads(callback_id)
+        return callback_id_dict['index']
+    except Exception:
+        return callback_id

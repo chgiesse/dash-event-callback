@@ -7,7 +7,7 @@ from .constants import (
     SSE_CALLBACK_ENDPOINT,
 )
 
-from dash import clientside_callback
+from dash import clientside_callback, hooks
 from flask import request
 from dataclasses import dataclass
 from typing import Callable
@@ -39,7 +39,9 @@ class ServerSentEvent:
 def generate_clientside_callback(input_ids, sse_callback_id):
     args_str = ", ".join(input_ids)
 
-    property_assignments = [f'    "sse_callback_id": "{sse_callback_id}"']
+    sse_id_obj = SSECallbackComponent.ids.sse(sse_callback_id)
+    str_sse_id = json.dumps(sse_id_obj)
+    property_assignments = [f"    'sse_callback_id': '{str_sse_id}'"]
     for input_id in input_ids:
         property_assignments.append(f'    "{input_id}": {input_id}')
 
@@ -58,15 +60,16 @@ def generate_clientside_callback(input_ids, sse_callback_id):
             }};
 
             // Prepare SSE options with the payload
+            console.log("payload", {{ payload }});
             const sse_options = {{
                 payload: JSON.stringify({{ content: payload }}),
                 headers: {{ "Content-Type": "application/json" }},
                 method: "POST"
             }};
-            
+
             // Set props for the SSE component
             window.dash_clientside.set_props(
-                "{SSECallbackComponent.ids.sse}",
+                {str_sse_id},
                 {{
                     options: sse_options,
                     url: "{SSE_CALLBACK_ENDPOINT}",
@@ -79,12 +82,7 @@ def generate_clientside_callback(input_ids, sse_callback_id):
 
 
 def generate_deterministic_id(func: Callable, dependencies: tuple) -> str:
-    """
-    Generates a deterministic SHA256 hash for a callback.
-    The hash is based on the function's fully qualified name and a sorted,
-    string representation of its dependencies.
-    Should align more with dashs callback id generation.
-    """
+    """Should align more with dashs callback id generation."""
     func_identity = f"{func.__module__}.{func.__qualname__}"
     dependency_reprs = sorted([repr(d) for d in dependencies])
     dependencies_string = ";".join(dependency_reprs)
@@ -101,7 +99,12 @@ def stream_props(component_id: str, props):
     return event.encode()
 
 
-def event_callback(*dependencies, prevent_initital_call=True, on_error=None):
+def event_callback(
+    *dependencies,
+    prevent_initital_call=True,
+    on_error=None,
+    reset_props={}
+):
 
     def decorator(func: Callable) -> Callable:
         if asyncio.iscoroutine(func):
@@ -122,6 +125,15 @@ def event_callback(*dependencies, prevent_initital_call=True, on_error=None):
             *dependencies,
             prevent_initial_call=prevent_initital_call,
         )
+
+        @hooks.layout()
+        def add_sse_component(layout):
+            return (
+                [SSECallbackComponent(callback_id)] + layout
+                if isinstance(layout, list)
+                else [SSECallbackComponent(callback_id), layout]
+            )
+
         return func
 
     return decorator

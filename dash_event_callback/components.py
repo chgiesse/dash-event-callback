@@ -2,19 +2,19 @@ from .constants import SSE_CALLBACK_ENDPOINT
 
 from dash_extensions import SSE
 from dash.dcc import Store
-from dash import html, get_app
+from dash import html
 
 
 class SSECallbackComponent(html.Div):
 
     class ids:
-        sse = "component-update-stream-sse"
-        store = "component-update-processing-store"
+        sse = lambda idx: {"type": "dash-event-stream", "index": idx}
+        store = lambda idx: {"type": "dash-event-stream-store", "index": idx}
 
-    def __init__(self):
+    def __init__(self, callback_id: str):
         super().__init__(
             [
-                SSE(id=self.ids.sse, concat=True, url=SSE_CALLBACK_ENDPOINT),
-                Store(id=self.ids.store, data={}, storage_type="memory"),
-            ]
+                SSE(id=self.ids.sse(callback_id), concat=True, url=SSE_CALLBACK_ENDPOINT),
+                Store(id=self.ids.store(callback_id), data={}, storage_type="memory"),
+            ],
         )

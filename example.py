@@ -2,7 +2,7 @@ from dash_event_callback import stream_props, event_callback
 
 from dash_iconify import DashIconify
 from plotly.express import data
-from dash import Dash, Input
+from dash import Dash, Input, clientside_callback, ALL, MATCH, State, Output
 import dash_mantine_components as dmc
 import dash_ag_grid as dag
 import pandas as pd
@@ -85,6 +85,7 @@ class TestComponentStream(dmc.Stack):
         )
     )
     def update_table(n_clicks):
+        print("EXECUTE CALLBACK", flush=True)
 
         yield stream_props(TestComponentStream.ids.button, {"loading": True})
 
@@ -161,12 +162,29 @@ class TestComponentStream(dmc.Stack):
 
 app = Dash(__name__)
 
+clientside_callback(
+    """
+    ( value) => {
+        console.log(value);
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output({"type": "s", "index": MATCH}, "children"),
+    Input({"type": "s", "index": MATCH}, "value"),
+    prevent_initial_call=True
+)
+
 app.layout = dmc.MantineProvider(
     dmc.Stack(
         [
             dmc.Title("Stream Components"),
             TestComponentStream(),
             NotificationComponent(),
+            dmc.Button("Click me", id="btn"),
+            dmc.Box(id={"type": "r", "index": 1}),
+            dmc.Box(id={"type": "r", "index": 2}),
+            dmc.TextInput(id={"type": "s", "index": 1}),
+            dmc.TextInput(id={"type": "s", "index": 2}),
         ],
         p="md",
         px="xl",
