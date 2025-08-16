@@ -162,7 +162,7 @@ def stream_props(component_id: str | _t.Dict, props):
 def event_callback(
     *dependencies,
     on_error=None,
-    close_on: _t.Optional[_t.List[_t.Tuple[DashDependency, _t.Any]]]=None,
+    cancel: _t.Optional[_t.List[_t.Tuple[DashDependency, _t.Any]]]=None,
     reset_props: _t.Dict={},
     prevent_initital_call=True,
 ):
@@ -196,11 +196,11 @@ def event_callback(
             )
 
         # Generate and register reset callback if close_on is specified
-        if close_on:
-            reset_callback_function = generate_reset_callback_function(callback_id, close_on, reset_props)
+        if cancel:
+            reset_callback_function = generate_reset_callback_function(callback_id, cancel, reset_props)
             if reset_callback_function:
                 # Extract the dependencies from close_on tuples
-                reset_dependencies = [dependency for dependency, _ in close_on]
+                reset_dependencies = [dependency for dependency, _ in cancel]
                 hooks.clientside_callback(
                     reset_callback_function,
                     *reset_dependencies,

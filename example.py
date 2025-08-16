@@ -69,6 +69,39 @@ class NotificationComponent(dmc.Box):
         )
 
 
+class TabsComponent(dmc.Tabs):
+
+    class ids:
+        tabs = "main-tabs"
+        stream_tab = "stream-tab"
+        cicd_tab = "cicd-tab"
+
+    def __init__(self):
+        super().__init__(
+            [
+                dmc.TabsList(
+                    [
+                        dmc.TabsTab("Data Stream", value="stream", id=self.ids.stream_tab, leftSection=DashIconify(icon="material-symbols:download-rounded")),
+                        dmc.TabsTab("CI/CD Pipeline", value="cicd", id=self.ids.cicd_tab, leftSection=DashIconify(icon="material-symbols:play-arrow-rounded")),
+                    ]
+                ),
+                dmc.TabsPanel(
+                    TestComponentStream(),
+                    value="stream",
+                    pt="lg"
+                ),
+                dmc.TabsPanel(
+                    CiCdComponent(),
+                    value="cicd",
+                    pt="lg"
+                ),
+            ],
+            id=self.ids.tabs,
+            value="stream",
+            color="grape",
+        )
+
+
 class CiCdComponent(dmc.Box):
 
     class ids:
@@ -98,7 +131,10 @@ class CiCdComponent(dmc.Box):
             color="red.6",
             autoClose=False
         ),
-        close_on=[(Input(ids.reset_button, "n_clicks"), 1)],
+        cancel=[
+            (Input(ids.reset_button, "n_clicks"), 1),
+            (Input(TabsComponent.ids.tabs, "value"), "stream")
+        ],
         reset_props={
             ids.button: {"disabled": False, "children": "Start CI/CD Pipeline"},
             ids.reset_button: {"display": "none"},
@@ -224,10 +260,14 @@ class TestComponentStream(dmc.Stack):
             color="red.6",
             autoClose=False
         ),
-        close_on=[(Input(ids.reset_button, "n_clicks"), 1)],
+        cancel=[
+            (Input(ids.reset_button, "n_clicks"), 1),
+            (Input(TabsComponent.ids.tabs, "value"), "cicd")
+        ],
         reset_props={
             ids.init_button: {"loading": False},
-            ids.reset_button: {"display": "none"}
+            ids.reset_button: {"display": "none"},
+            ids.table: {"rowData": []}
         }
     )
     def update_table(n_clicks):
@@ -312,7 +352,6 @@ class TestComponentStream(dmc.Stack):
         super().__init__(
             justify="flex-start",
             align="flex-start",
-            w="70vw",
             children=[
                 buttons,
                 dag.AgGrid(
@@ -327,7 +366,158 @@ class TestComponentStream(dmc.Stack):
         )
 
 
+class ChatComponent(dmc.Affix):
 
+    class ids:
+        expand_button = "chat-expand-btn"
+        drawer = "chat-drawer"
+
+    clientside_callback(
+        """( click, isOpen ) => { return !isOpen }""",
+        Output(ids.drawer, "opened"),
+        Input(ids.expand_button, "n_clicks"),
+        State(ids.drawer, "opened"),
+        prevent_initial_call=True
+    )
+
+    def __init__(self) -> None:
+        # Sample messages for demonstration
+        sample_messages = [
+            dmc.Group(
+                [
+                    dmc.Space(w="auto"),
+                    dmc.Paper(
+                        dmc.Text("Hello! How can I help you today?", size="sm"),
+                        p="xs",
+                        bg="blue",
+                        style={"maxWidth": "80%", "borderRadius": "12px 12px 4px 12px"}
+                    )
+                ],
+                justify="flex-end"
+            ),
+            dmc.Group(
+                [
+                    dmc.Paper(
+                        dmc.Text("I need help with my project", size="sm"),
+                        p="xs",
+                        bg="gray",
+                        style={"maxWidth": "80%", "borderRadius": "12px 12px 12px 4px"}
+                    ),
+                    dmc.Space(w="auto")
+                ],
+                justify="flex-start"
+            ),
+            dmc.Group(
+                [
+                    dmc.Space(w="auto"),
+                    dmc.Paper(
+                        dmc.Text("I'd be happy to help! What kind of project are you working on?", size="sm"),
+                        p="xs",
+                        bg="blue",
+                        style={"maxWidth": "80%", "borderRadius": "12px 12px 4px 12px"}
+                    )
+                ],
+                justify="flex-end"
+            )
+        ]
+
+        # Chat header
+        chat_header = dmc.Group(
+            [
+                dmc.Avatar(
+                    DashIconify(icon="material-symbols:smart-toy-outline"),
+                    size="md",
+                    color="blue"
+                ),
+                dmc.Stack(
+                    [
+                        dmc.Text("AI Assistant", fw="bold", size="sm"),
+                        dmc.Text("Online", size="xs", c="gray")
+                    ],
+                    gap=0
+                ),
+            ],
+            p="md",
+            style={"borderBottom": "1px solid var(--mantine-color-dark-4)"}
+        )
+
+        # Messages container
+        messages_container = dmc.ScrollArea(
+            dmc.Stack(
+                sample_messages,
+                gap="md",
+                p="md",
+                style={"minHeight": "300px"}
+            ),
+            h=400,
+            scrollbarSize=6,
+            offsetScrollbars="y"
+        )
+
+        # Input area
+        input_area = dmc.Stack(
+            [
+                dmc.Textarea(
+                    placeholder="Type your message...",
+                    minRows=1,
+                    maxRows=4,
+                    autosize=True,
+                    style={"flex": 1}
+                ),
+                dmc.Button(
+                    [
+                        DashIconify(icon="material-symbols:send", width=16),
+                        dmc.Text("Send", ml="xs")
+                    ],
+                    variant="filled",
+                    color="blue",
+                    size="sm",
+                    fullWidth=False,
+                    style={"alignSelf": "flex-end"}
+                )
+            ],
+            gap="xs",
+            p="md",
+            style={"borderTop": "1px solid var(--mantine-color-dark-4)"}
+        )
+
+        # Chat drawer content
+        chat_content = dmc.Stack(
+            [
+                chat_header,
+                messages_container,
+                input_area
+            ],
+            h="100%",
+            gap=0
+        )
+
+        super().__init__(
+            [
+                dmc.Button(
+                    [
+                        DashIconify(icon="material-symbols:chat", width=20),
+                        dmc.Text("Chat", ml="xs")
+                    ],
+                    id=self.ids.expand_button,
+                    variant="gradient",
+                    gradient={"from": "blue", "to": "cyan", "deg": 35},
+                    size="md"
+                ),
+                dmc.Drawer(
+                    chat_content,
+                    size=450,
+                    id=self.ids.drawer,
+                    title=None,
+                    withCloseButton=False,
+                    styles={
+                        "body": {"padding": 0, "height": "100%"},
+                        "inner": {"padding": 0}
+                    }
+                )
+            ],
+            position={"bottom": 20, "right": 20}
+        )
 
 
 app = Dash(__name__)
@@ -337,14 +527,9 @@ app.layout = dmc.MantineProvider(
     dmc.Stack(
         [
             dmc.Title("Stream Components"),
-            dmc.Group(
-                [
-                    TestComponentStream(),
-                    CiCdComponent(),
-                ],
-                align="flex-start"
-            ),
+            TabsComponent(),
             NotificationComponent(),
+            ChatComponent()
         ],
         p="md",
         px="xl",
@@ -380,7 +565,6 @@ app.layout = dmc.MantineProvider(
             ],
         },
     }
-
 )
 
 if __name__ == "__main__":

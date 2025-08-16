@@ -88,15 +88,6 @@ def sync_sse_callback_endpoint():
     })
     return response
 
-#
-# @hooks.layout(priority=1)
-# def add_sse_component(layout):
-#     return (
-#         [SSECallbackComponent()] + layout
-#         if isinstance(layout, list)
-#         else [SSECallbackComponent(), layout]
-#     )
-
 
 hooks.clientside_callback(
     """
@@ -156,26 +147,4 @@ hooks.clientside_callback(
 )
 
 
-# @hooks.setup()
-# def handle_url_change(app: Dash):
-#     # if not app.use_pages:
-#     #     return
-#     hooks.clientside_callback(
-#         f"""
-#         function ( pathChange ) {{
-#             if ( !pathChange ) {{
-#                 return window.dash_clientside.no_update
-#             }}
-#             setProps = window.dash_clientside.set_props
-#             console.log("Close sse")
-#             setProps('{SSECallbackComponent.ids.sse}', {{done: true, url: null}});
-#             setProps('{SSECallbackComponent.ids.store}', {{data: {{}}}});
-#             setProps("stream-button", {{loading: false}})
-#         }}""",
-#         # Input("_pages_location", "pathname"),
-#         Input("btn", "n_clicks"),
-#         prevent_initial_call=True,
-#     )
-#
-#
 __all__ = ["event_callback", "stream_props"]
