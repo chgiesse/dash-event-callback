@@ -3,15 +3,13 @@ from .helper import recursive_to_plotly_json, get_callback_id
 from .constants import (
     STEAM_SEPERATOR,
     SSE_CALLBACK_ID_KEY,
-    SSE_CALLBACK_MAP,
     SSE_CALLBACK_ENDPOINT,
 )
 
-from dash import clientside_callback, hooks, Dash, Input
+from dash import clientside_callback, hooks, State, ALL
 from dash.dependencies import DashDependency
 from flask import request
 from dataclasses import dataclass
-from typing import Callable
 import typing as _t
 import json
 import inspect
@@ -38,6 +36,34 @@ class ServerSentEvent:
         return message.encode("utf-8")
 
 
+@dataclass
+class SSEServerObject:
+    func: _t.Callable
+    on_error: _t.Optional[_t.Callable]
+    reset_props: _t.Dict
+
+    @property
+    def func_name(self):
+        return self.func.__name__
+
+
+class SSEServerObjects:
+    funcs: _t.Dict[str, SSEServerObject] = {}
+
+    @classmethod
+    def add_func(cls, sse_obj: SSEServerObject, callback_id: str):
+        if callback_id in cls.funcs:
+            raise KeyError(
+                f"callback_id: {callback_id} with name: {sse_obj.func_name} is already registered"
+            )
+
+        cls.funcs[callback_id] = sse_obj
+
+    @classmethod
+    def get_func(cls, callback_id: str):
+        return cls.funcs.get(callback_id)
+
+
 def generate_reset_callback_function(callback_id: str, close_on: _t.List[_t.Tuple[DashDependency, _t.Any]], reset_props: _t.Dict = {}):
     """Generate a clientside callback function to reset SSE connection based on close_on conditions."""
 
@@ -57,6 +83,8 @@ def generate_reset_callback_function(callback_id: str, close_on: _t.List[_t.Tupl
             condition = f'value{i} === {str(desired_state).lower()}'
         elif isinstance(desired_state, (int, float)):
             condition = f'value{i} === {desired_state}'
+        elif desired_state is None:
+            condition = f'value{i} === null'
         else:
             condition = f'value{i} === {json.dumps(desired_state)}'
         close_conditions.append(condition)
@@ -73,14 +101,18 @@ def generate_reset_callback_function(callback_id: str, close_on: _t.List[_t.Tupl
     reset_props_code = '\n                '.join(reset_props_assignments)
 
     # Create the function parameters
-    param_names = [f'value{i}' for i in range(len(close_on))]
+    param_names = [f'value{i}' for i in range(len(close_on[:-1]))]
     args_str = ', '.join(param_names)
 
     # Create the condition check
     condition_check = ' && '.join(close_conditions)
-
     js_code = f"""
-        function({args_str}) {{
+        function({args_str}, sseUrl) {{
+            console.log("RESET", sseUrl)
+            if ( !sseUrl ) {{
+                return window.dash_clientside.no_update;
+            }}
+
             if (!{condition_check}) {{
                 return window.dash_clientside.no_update;
             }}
@@ -96,12 +128,17 @@ def generate_reset_callback_function(callback_id: str, close_on: _t.List[_t.Tupl
     return js_code
 
 
-def generate_clientside_callback(input_ids, sse_callback_id):
+def generate_clientside_callback(
+        input_ids,
+        sse_callback_id,
+        prevent_initial_call
+):
     args_str = ", ".join(input_ids)
-
+    start = "false" if prevent_initial_call else "true"
     sse_id_obj = SSECallbackComponent.ids.sse(sse_callback_id)
     str_sse_id = json.dumps(sse_id_obj)
     property_assignments = [f"    'sse_callback_id': '{str_sse_id}'"]
+
     for input_id in input_ids:
         property_assignments.append(f'    "{input_id}": {input_id}')
 
@@ -109,10 +146,10 @@ def generate_clientside_callback(input_ids, sse_callback_id):
 
     js_code = f"""
         function({args_str}) {{
-            if ( !window.dash_clientside.callback_context.triggered_id ) {{
-                return window.dash_clientside.no_update;
-            }}
-
+            // if ( !window.dash_clientside.callback_context.triggered_id ) {{
+            //     return window.dash_clientside.no_update;
+            // }}
+            console.log("{args_str}")
             // Create payload object with all inputs
             const payload = {{
                 ...{payload_obj},
@@ -120,11 +157,10 @@ def generate_clientside_callback(input_ids, sse_callback_id):
             }};
 
             // Prepare SSE options with the payload
-            console.log("payload", {{ payload }});
             const sse_options = {{
                 payload: JSON.stringify({{ content: payload }}),
                 headers: {{ "Content-Type": "application/json" }},
-                method: "POST"
+                method: "POST",
             }};
 
             // Set props for the SSE component
@@ -141,7 +177,7 @@ def generate_clientside_callback(input_ids, sse_callback_id):
     return js_code
 
 
-def generate_deterministic_id(func: Callable, dependencies: tuple) -> str:
+def generate_deterministic_id(func: _t.Callable, dependencies: tuple) -> str:
     """Should align more with dashs callback id generation."""
     func_identity = f"{func.__module__}.{func.__qualname__}"
     dependency_reprs = sorted([repr(d) for d in dependencies])
@@ -161,13 +197,13 @@ def stream_props(component_id: str | _t.Dict, props):
 
 def event_callback(
     *dependencies,
-    on_error=None,
+    on_error: _t.Optional[_t.Callable]=None,
     cancel: _t.Optional[_t.List[_t.Tuple[DashDependency, _t.Any]]]=None,
     reset_props: _t.Dict={},
-    prevent_initital_call=True,
+    prevent_initial_call=True,
 ):
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: _t.Callable) -> _t.Callable:
         if asyncio.iscoroutine(func):
             raise ValueError("Event callback needs to be a normal function, not async")
 
@@ -177,30 +213,34 @@ def event_callback(
         sig = inspect.signature(func)
         param_names = list(sig.parameters.keys())
         callback_id = generate_deterministic_id(func, dependencies)
-        SSE_CALLBACK_MAP[callback_id] = {"function": func, "on_error": on_error}
+        sse_obj = SSEServerObject(func, on_error, reset_props)
+        SSEServerObjects.add_func(sse_obj, callback_id)
 
         # Generate and register clientside callback
-        clientside_function = generate_clientside_callback(param_names, callback_id)
-        clientside_callback(
+        clientside_function = generate_clientside_callback(param_names, callback_id, prevent_initial_call)
+        hooks.clientside_callback(
             clientside_function,
             *dependencies,
-            prevent_initial_call=prevent_initital_call,
+            prevent_initial_call=prevent_initial_call,
         )
 
         @hooks.layout()
         def add_sse_component(layout):
+            component = SSECallbackComponent(callback_id)
             return (
-                [SSECallbackComponent(callback_id)] + layout
+                [component] + layout
                 if isinstance(layout, list)
-                else [SSECallbackComponent(callback_id), layout]
+                else [component, layout]
             )
 
         # Generate and register reset callback if close_on is specified
         if cancel:
-            reset_callback_function = generate_reset_callback_function(callback_id, cancel, reset_props)
+            sse_state = (State(SSECallbackComponent.ids.sse(callback_id), "url"), SSE_CALLBACK_ENDPOINT)
+            cancel_w_sse = cancel + [sse_state]
+            reset_callback_function = generate_reset_callback_function(callback_id, cancel_w_sse, reset_props)
             if reset_callback_function:
                 # Extract the dependencies from close_on tuples
-                reset_dependencies = [dependency for dependency, _ in cancel]
+                reset_dependencies = [dependency for dependency, _ in cancel_w_sse]
                 hooks.clientside_callback(
                     reset_callback_function,
                     *reset_dependencies,

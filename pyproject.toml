@@ -11,6 +11,11 @@ requires-python = ">=3.12"
 dependencies = [
     "dash (>=3.1.1,<4.0.0)",
     "dash-extensions>=2.0.4,<3.0.0",
+    "dash-iconify (>=0.1.2,<0.2.0)",
+    "plotly[express] (>=6.3.0,<7.0.0)",
+    "dash-mantine-components (>=2.1.0,<3.0.0)",
+    "dash-ag-grid (==32.3.0)",
+    "pandas (>=2.3.1,<3.0.0)",
 ]
 
 # Entry point for automatic plugin discovery
@@ -34,3 +39,7 @@ packages = [{include = "dash_event_callback"}]
 python = "^3.12"
 dash = ">=3.1.1,<4.0.0"
 dash-extensions = ">=2.0.4,<3.0.0"
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.30.1"
+

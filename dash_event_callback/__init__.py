@@ -1,6 +1,7 @@
 from .event_callback import (
     SSECallbackComponent,
     ServerSentEvent,
+    SSEServerObjects,
     event_callback,
     stream_props,
 )
@@ -8,10 +9,10 @@ from .constants import (
     SSE_CALLBACK_ENDPOINT,
     STEAM_SEPERATOR,
     SSE_CALLBACK_ID_KEY,
-    SSE_CALLBACK_MAP,
     ERROR_TOKEN,
     DONE_TOKEN,
     INIT_TOKEN,
+    STREAMING_TIMEOUT,
     signal_type,
 )
 from .helper import get_callback_id
@@ -22,7 +23,6 @@ from flask import stream_with_context, make_response, request, abort
 import warnings
 import time
 import json
-from asyncio import CancelledError
 
 
 @hooks.route(SSE_CALLBACK_ENDPOINT, methods=["POST"])
@@ -39,10 +39,6 @@ def sync_sse_callback_endpoint():
     if not callback_id:
         raise ValueError("callback_id is required")
 
-    callback = SSE_CALLBACK_MAP.get(callback_id, {})
-    callback_func = callback.get("function")
-    on_error = callback.get("on_error")
-
     def send_signal(signal: signal_type, payload: Dict = {}):
         response = [signal, payload, callback_id]
         event = ServerSentEvent(json.dumps(response) + STEAM_SEPERATOR)
@@ -51,33 +47,46 @@ def sync_sse_callback_endpoint():
     @stream_with_context
     def callback_generator():
         yield send_signal(INIT_TOKEN)
+        sse_obj = SSEServerObjects.get_func(callback_id)
 
-        if not callback_func:
+        if not sse_obj:
             error_message = f"Could not find function for sse id {callback_id}"
-            yield (
-                on_error(error_message)
-                if on_error
-                else send_signal(ERROR_TOKEN, {"error": error_message})
-            )
+            yield send_signal(ERROR_TOKEN, {"error": error_message})
             return
 
+        callback_func = sse_obj.func
+        on_error = sse_obj.on_error
+
         try:
+            start_time = time.time()
             for item in callback_func(**content):
+                elapsed = time.time() - start_time
+                if elapsed > STREAMING_TIMEOUT:
+                   raise TimeoutError(f"Timeout for callback: {sse_obj.func_name} | {callback_id}")
+
                 if item is None:
                     warnings.warn(
-                        f"Callback generator functions should not return None values - Callback ID :{callback_id}"
+                        f"Callback generator functions should not return None values - Callback: {sse_obj.func_name} | {callback_id}"
                     )
                     continue
+
                 yield item
                 time.sleep(0.05)
             yield send_signal(DONE_TOKEN)
 
-        except CancelledError as e:
-            print("SSE DISCONNECT", str(e), flush=True)
-
         except Exception as e:
-            yield (
-                on_error(e) if on_error else send_signal(ERROR_TOKEN, {"error": str(e)})
+            handle_error = True
+            if on_error:
+                handle_error = False
+                yield on_error(e)
+
+            yield send_signal(
+                ERROR_TOKEN,
+                {
+                    "error": str(e),
+                    "handle_error": handle_error,
+                    "reset_props": sse_obj.reset_props
+                }
             )
 
     response = make_response(callback_generator())
@@ -91,9 +100,8 @@ def sync_sse_callback_endpoint():
 
 hooks.clientside_callback(
     """
-    function(message, processedData) {
+    function(message, processedData, sseId) {
         if (!message) { return processedData || {} };
-
         const TOKENS = {
             DONE: "[DONE]",
             INIT: "[INIT]",
@@ -118,14 +126,25 @@ hooks.clientside_callback(
 
                 switch (componentId) {
                     case TOKENS.INIT:
+                        console.log("INIT SSE", sseId)
                         processedData[callbackId] = 1;
+                        setProps(sseId, {done: false})
                         break;
                     case TOKENS.DONE:
+                        console.log("SET SSE DONE")
                         processedData[callbackId] = 0;
+                        setProps(sseId, {done: true, url: null})
                         break;
                     case TOKENS.ERROR:
                         processedData[callbackId] = 0;
-                        window.alert("Error occurred while processing stream - " + props.error);
+                        resetProps = props.reset_props ? props.reset_props : {};
+                        if ( props.handle_error ) {
+                            window.alert("Error occurred while processing stream - " + props.error);
+                        }
+                        for ( const [rcid, rprops] of Object.entries(resetProps)) {
+                            setProps(rcid, rprops)
+                        }
+                        setProps(sseId, {done: true, url: null});
                         break;
                     default:
                         setProps(componentId, props);
@@ -133,7 +152,7 @@ hooks.clientside_callback(
                 }
             } catch (e) {
                 processedData[cbId] = 0;
-                setProps("component-update-stream-sse", {done: true});
+                setProps(sseId, {done: true});
                 console.error("Error processing message:", e, messageStr);
             }
         });
@@ -143,8 +162,15 @@ hooks.clientside_callback(
     Output(SSECallbackComponent.ids.store(MATCH), "data"),
     Input(SSECallbackComponent.ids.sse(MATCH), "value"),
     State(SSECallbackComponent.ids.store(MATCH), "data"),
-    prevent_initial_call=True,
+    State(SSECallbackComponent.ids.sse(MATCH), "id"),
+    # prevent_initial_call=True,
 )
-
+from dash import ALL
+hooks.clientside_callback(
+    """( done, id, url ) => { console.log(done, id, url) }""",
+    Input(SSECallbackComponent.ids.sse(ALL), "done"),
+    Input(SSECallbackComponent.ids.sse(ALL), "id"),
+    Input(SSECallbackComponent.ids.sse(ALL), "url"),
+)
 
 __all__ = ["event_callback", "stream_props"]

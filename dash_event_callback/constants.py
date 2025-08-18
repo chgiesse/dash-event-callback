@@ -1,17 +1,15 @@
-from typing import Literal
+from typing import Literal, Final
 
+STREAMING_TIMEOUT: Final[int] = 60
 
-SSE_CALLBACK_MAP = {}
-WS_CALLBACK_MAP = {}
+WS_CALLBACK_ENDPOINT: Final[str] = "/stream_dash_update_component"
+SSE_CALLBACK_ENDPOINT: Final[str] = "/dash_update_component_sse"
 
-WS_CALLBACK_ENDPOINT = "/stream_dash_update_component"
-SSE_CALLBACK_ENDPOINT = "/dash_update_component_sse"
+STEAM_SEPERATOR: Final[str] = "__concatsep__"
+SSE_CALLBACK_ID_KEY: Final[str] = "sse_callback_id"
 
-STEAM_SEPERATOR = "__concatsep__"
-SSE_CALLBACK_ID_KEY = "sse_callback_id"
+ERROR_TOKEN: Final = "[ERROR]"
+INIT_TOKEN: Final = "[INIT]"
+DONE_TOKEN: Final = "[DONE]"
 
-ERROR_TOKEN = "[ERROR]"
-INIT_TOKEN = "[INIT]"
-DONE_TOKEN = "[DONE]"
-
-signal_type = Literal[ERROR_TOKEN, INIT_TOKEN, DONE_TOKEN]
+signal_type = Literal["[ERROR]", "[INIT]", "[DONE]"]

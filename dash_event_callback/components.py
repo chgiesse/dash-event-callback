@@ -14,7 +14,11 @@ class SSECallbackComponent(html.Div):
     def __init__(self, callback_id: str):
         super().__init__(
             [
-                SSE(id=self.ids.sse(callback_id), concat=True, url=SSE_CALLBACK_ENDPOINT),
+                SSE(
+                    id=self.ids.sse(callback_id),
+                    concat=True,
+                    url=SSE_CALLBACK_ENDPOINT,
+                ),
                 Store(id=self.ids.store(callback_id), data={}, storage_type="memory"),
             ],
         )
