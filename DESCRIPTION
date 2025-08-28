@@ -1,0 +1,13 @@
+Package: dashEventCallback
+Title: SSE component for Dash event callbacks
+Version: 1.2.0
+Description: SSE component for Dash event callbacks
+Depends: R (>= 3.0.2)
+Imports: 
+Suggests: 
+License: MIT
+URL: 
+BugReports: 
+Encoding: UTF-8
+LazyData: true
+KeepSource: true

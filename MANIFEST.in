@@ -1,0 +1,9 @@
+include dash_event_callback/async-*.js
+include dash_event_callback/async-*.js.map
+include dash_event_callback/*-shared.js
+include dash_event_callback/*-shared.js.map
+include dash_event_callback/metadata.json
+include dash_event_callback/package-info.json
+include README.md
+include LICENSE
+include package.json

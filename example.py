@@ -4,6 +4,7 @@ from dash_iconify import DashIconify
 from plotly.express import data
 from dash import Dash, Input, clientside_callback, ALL, MATCH, State, Output, callback, set_props
 import dash_mantine_components as dmc
+from flask import request
 import dash_ag_grid as dag
 import pandas as pd
 import random
@@ -352,7 +353,7 @@ class TestComponentStream(dmc.Stack):
                 buttons,
                 dag.AgGrid(
                     id=self.ids.table,
-                    # style={"height": "75vh"},
+                    style={"height": "70vh"},
                     className="ag-theme-quartz-auto-dark",
                     dashGridOptions={
                         "pagination": True,
@@ -518,7 +519,6 @@ class TestComponentStream(dmc.Stack):
 
 app = Dash(__name__)
 
-
 app.layout = dmc.MantineProvider(
     dmc.Stack(
         [
@@ -539,7 +539,6 @@ app.layout = dmc.MantineProvider(
                 "#7a7e83",
                 "#383e46",
                 "#4a5d79",
-                # '#d3d4d6',
                 "#222831",
                 "#1f242c",
                 "#181c22",

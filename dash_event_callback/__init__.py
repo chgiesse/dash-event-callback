@@ -1,176 +1,85 @@
-from .event_callback import (
-    SSECallbackComponent,
-    ServerSentEvent,
-    SSEServerObjects,
-    event_callback,
-    stream_props,
-)
-from .constants import (
-    SSE_CALLBACK_ENDPOINT,
-    STEAM_SEPERATOR,
-    SSE_CALLBACK_ID_KEY,
-    ERROR_TOKEN,
-    DONE_TOKEN,
-    INIT_TOKEN,
-    STREAMING_TIMEOUT,
-    signal_type,
-)
-from .helper import get_callback_id
+from __future__ import print_function as _
 
-from typing import Dict
-from dash import hooks, Input, Output, State, Dash, MATCH
-from flask import stream_with_context, make_response, request, abort
-import warnings
-import time
+import os as _os
+import sys as _sys
 import json
 
+import dash as _dash
 
-@hooks.route(SSE_CALLBACK_ENDPOINT, methods=["POST"])
-def sync_sse_callback_endpoint():
+# noinspection PyUnresolvedReferences
+from ._imports_ import *
+from ._imports_ import __all__
 
-    if "text/event-stream" not in request.accept_mimetypes:
-        abort(400)
+if not hasattr(_dash, "__plotly_dash") and not hasattr(_dash, "development"):
+    print(
+        "Dash was not successfully imported. "
+        "Make sure you don't have a file "
+        'named \n"dash.py" in your current directory.',
+        file=_sys.stderr,
+    )
+    _sys.exit(1)
 
-    data = request.get_json()
-    content = data["content"].copy()
-    ctx = content.pop("callback_context", {})
-    callback_id = get_callback_id(content.pop(SSE_CALLBACK_ID_KEY))
+_basepath = _os.path.dirname(__file__)
+_filepath = _os.path.abspath(_os.path.join(_basepath, "package-info.json"))
+with open(_filepath) as f:
+    package = json.load(f)
 
-    if not callback_id:
-        raise ValueError("callback_id is required")
+package_name = package["name"].replace(" ", "_").replace("-", "_")
+__version__ = package["version"]
 
-    def send_signal(signal: signal_type, payload: Dict = {}):
-        response = [signal, payload, callback_id]
-        event = ServerSentEvent(json.dumps(response) + STEAM_SEPERATOR)
-        return event.encode()
+_current_path = _os.path.dirname(_os.path.abspath(__file__))
 
-    @stream_with_context
-    def callback_generator():
-        yield send_signal(INIT_TOKEN)
-        sse_obj = SSEServerObjects.get_func(callback_id)
+_this_module = _sys.modules[__name__]
 
-        if not sse_obj:
-            error_message = f"Could not find function for sse id {callback_id}"
-            yield send_signal(ERROR_TOKEN, {"error": error_message})
-            return
+async_resources = [
+    "SSE",
+]
 
-        callback_func = sse_obj.func
-        on_error = sse_obj.on_error
+_js_dist = []
 
-        try:
-            start_time = time.time()
-            for item in callback_func(**content):
-                elapsed = time.time() - start_time
-                if elapsed > STREAMING_TIMEOUT:
-                   raise TimeoutError(f"Timeout for callback: {sse_obj.func_name} | {callback_id}")
-
-                if item is None:
-                    warnings.warn(
-                        f"Callback generator functions should not return None values - Callback: {sse_obj.func_name} | {callback_id}"
-                    )
-                    continue
-
-                yield item
-                time.sleep(0.05)
-            yield send_signal(DONE_TOKEN)
-
-        except Exception as e:
-            handle_error = True
-            if on_error:
-                handle_error = False
-                yield on_error(e)
-
-            yield send_signal(
-                ERROR_TOKEN,
-                {
-                    "error": str(e),
-                    "handle_error": handle_error,
-                    "reset_props": sse_obj.reset_props
-                }
-            )
-
-    response = make_response(callback_generator())
-    response.headers.update({
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Transfer-Encoding": "chunked",
-    })
-    return response
-
-
-hooks.clientside_callback(
-    """
-    function(message, processedData, sseId) {
-        if (!message) { return processedData || {} };
-        const TOKENS = {
-            DONE: "[DONE]",
-            INIT: "[INIT]",
-            ERROR: "[ERROR]"
-        };
-
-        const setProps = window.dash_clientside.set_props;
-        const messageList = message.split('__concatsep__');
-        processedData = processedData || {};
-
-        if (messageList[messageList.length - 1] === '') {
-            messageList.pop();
+_js_dist.extend(
+    [
+        {
+            "relative_package_path": "async-{}.js".format(async_resource),
+            "external_url": ("https://unpkg.com/{0}@{2}" "/{1}/async-{3}.js").format(
+                package_name, __name__, __version__, async_resource
+            ),
+            "namespace": package_name,
+            "async": True,
         }
-
-        const cbId = JSON.parse(messageList[0])[2];
-        const startIdx = processedData[cbId] || 0;
-        const newMessages = messageList.slice(startIdx);
-
-        newMessages.forEach(messageStr => {
-            try {
-                const [componentId, props, callbackId] = JSON.parse(messageStr);
-
-                switch (componentId) {
-                    case TOKENS.INIT:
-                        console.log("INIT SSE", sseId)
-                        processedData[callbackId] = 1;
-                        setProps(sseId, {done: false})
-                        break;
-                    case TOKENS.DONE:
-                        console.log("SET SSE DONE")
-                        processedData[callbackId] = 0;
-                        setProps(sseId, {done: true, url: null})
-                        break;
-                    case TOKENS.ERROR:
-                        processedData[callbackId] = 0;
-                        resetProps = props.reset_props ? props.reset_props : {};
-                        if ( props.handle_error ) {
-                            window.alert("Error occurred while processing stream - " + props.error);
-                        }
-                        for ( const [rcid, rprops] of Object.entries(resetProps)) {
-                            setProps(rcid, rprops)
-                        }
-                        setProps(sseId, {done: true, url: null});
-                        break;
-                    default:
-                        setProps(componentId, props);
-                        processedData[callbackId]++;
-                }
-            } catch (e) {
-                processedData[cbId] = 0;
-                setProps(sseId, {done: true});
-                console.error("Error processing message:", e, messageStr);
-            }
-        });
-
-        return processedData;
-    }""",
-    Output(SSECallbackComponent.ids.store(MATCH), "data"),
-    Input(SSECallbackComponent.ids.sse(MATCH), "value"),
-    State(SSECallbackComponent.ids.store(MATCH), "data"),
-    State(SSECallbackComponent.ids.sse(MATCH), "id"),
-    # prevent_initial_call=True,
-)
-from dash import ALL
-hooks.clientside_callback(
-    """( done, id, url ) => { console.log(done, id, url) }""",
-    Input(SSECallbackComponent.ids.sse(ALL), "done"),
-    Input(SSECallbackComponent.ids.sse(ALL), "id"),
-    Input(SSECallbackComponent.ids.sse(ALL), "url"),
+        for async_resource in async_resources
+    ]
 )
 
-__all__ = ["event_callback", "stream_props"]
+# TODO: Figure out if unpkg link works
+_js_dist.extend(
+    [
+        {
+            "relative_package_path": "async-{}.js.map".format(async_resource),
+            "external_url": (
+                "https://unpkg.com/{0}@{2}" "/{1}/async-{3}.js.map"
+            ).format(package_name, __name__, __version__, async_resource),
+            "namespace": package_name,
+            "dynamic": True,
+        }
+        for async_resource in async_resources
+    ]
+)
+
+_js_dist.extend(
+    [
+        {"relative_package_path": "dash_event_callback.js", "namespace": package_name},
+        {
+            "relative_package_path": "dash_event_callback.js.map",
+            "namespace": package_name,
+            "dynamic": True,
+        },
+    ]
+)
+
+_css_dist = []
+
+
+for _component in __all__:
+    setattr(locals()[_component], "_js_dist", _js_dist)
+    setattr(locals()[_component], "_css_dist", _css_dist)
