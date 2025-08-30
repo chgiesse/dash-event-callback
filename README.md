@@ -37,17 +37,18 @@ yield stream_props([
 
 This example (from Dash’s background callback docs) shows how a background callback is no longer necessary—eliminating the need for extra services like Celery + Redis.
 
+
 ```python
 # data.py
 import pandas as pd
-import asyncio
+import time
 
-async def get_data(chunk_size: int):
+def get_data(chunk_size: int):
     df: pd.DataFrame = data.gapminder()
     total_rows = df.shape[0]
 
     while total_rows > 0:
-        await asyncio.sleep(2)
+        time.sleep(2)
         end = len(df) - total_rows + chunk_size
         total_rows -= chunk_size
         update_data = df[:end].to_dict("records")
@@ -57,26 +58,37 @@ async def get_data(chunk_size: int):
 
 A more realistic use case would be streaming query results with *SQLAlchemy async*:
 
+
 ```python
 # data.py
-from sqlalchemy.ext.asyncio import AsyncConnection
+from sqlalchemy import Connection
 
-async def get_data(connection: AsyncConnection):
-    result = await connection.stream(select(users_table))
+def get_data(connection: Connection):
+    result = connection.execute(select(users_table))
 
-    async for partition in result.partitions(100):
+    for partition in partition_results(result, 100):
         print("list of rows: %s" % partition)
-        return partition
+        yield partition
 
+# Helper function to partition results
+def partition_results(result, size):
+    partition = []
+    for row in result:
+        partition.append(row)
+        if len(partition) == size:
+            yield partition
+            partition = []
+    if partition:
+        yield partition
 ```
 Hooking it into your app with `event_callback`:
+
 ```python
-#app.py
+# app.py
 from flash import Input, event_callback, stream_props
 
 @event_callback(Input("start-stream-button", "n_clicks"))
-async def update_table(_):
-
+def update_table(_):
     yield stream_props([
         ("start-stream-button", {"loading": True}),
         ("cancel-stream-button", {"display": "flex"})
@@ -84,7 +96,7 @@ async def update_table(_):
 
     progress = 0
     chunk_size = 500
-    async for data_chunk, colnames in get_data(chunk_size):
+    for data_chunk, colnames in get_data(chunk_size):
         if progress == 0:
             columnDefs = [{"field": col} for col in colnames]
             update = {"rowData": data_chunk, "columnDefs": columnDefs}
